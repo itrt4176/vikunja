@@ -1435,6 +1435,8 @@ var yaegiSymbolPackages = []struct {
 	{"code.vikunja.io/api/pkg/user", "vikunja_user.go"},
 	{"github.com/labstack/echo/v5", "echo.go"},
 	{"github.com/ThreeDotsLabs/watermill/message", "watermill.go"},
+	{"src.techknowlogick.com/xormigrate", "xormigrate.go"},
+	{"xorm.io/xorm", "xorm.go"},
 }
 
 // YaegiSymbols regenerates the yaegi symbol tables in pkg/yaegi_symbols so
