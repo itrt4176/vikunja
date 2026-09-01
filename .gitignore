@@ -51,6 +51,7 @@ devenv.local.nix
 
 # AI Tools
 /.claude/settings.local.json
+CLAUDE.local.md
 PLAN.md
 plans/
 /.crush/
