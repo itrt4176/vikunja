@@ -1,11 +1,14 @@
 import {describe, it, expect, vi} from 'vitest'
-import {mount} from '@vue/test-utils'
+import {mount, flushPromises} from '@vue/test-utils'
 import {setActivePinia, createPinia} from 'pinia'
 import {defineComponent} from 'vue'
+
+const {errorMessage} = vi.hoisted(() => ({errorMessage: vi.fn()}))
 
 vi.mock('@/router', () => ({default: {currentRoute: {value: {params: {}}}, isReady: () => Promise.resolve()}}))
 vi.mock('vue-i18n', () => ({useI18n: () => ({t: (k: string) => k}), createI18n: () => ({global: {t: (k: string) => k}})}))
 vi.mock('@/stores/base', () => ({useBaseStore: () => ({setHasTasks: vi.fn()})}))
+vi.mock('@/message', () => ({error: errorMessage}))
 vi.mock('@/services/customField', () => ({
 	default: class {
 		getValues = vi.fn()
@@ -62,7 +65,8 @@ function mountFields(taskId: number, map: CustomFieldValuesMap, canWrite = true)
 describe('CustomFields.vue', () => {
 	it('renders nothing when the map is empty', () => {
 		const {wrapper} = mountFields(1, {})
-		expect(wrapper.find('.custom-fields').exists()).toBe(false)
+		expect(wrapper.findAll('.custom-field')).toHaveLength(0)
+		expect(wrapper.findAll('.detail-title')).toHaveLength(0)
 	})
 
 	it('renders one row per entry, sorted by display_order', () => {
@@ -129,5 +133,43 @@ describe('CustomFields.vue', () => {
 		const {wrapper, store} = mountFields(1, map)
 		await wrapper.find('.stub-save').trigger('click')
 		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'hi'})
+	})
+
+	it('shows a toast and reverts the input to the stored value when save fails', async () => {
+		// A rejected upsert (e.g. a 400) must not leave the rejected value in the
+		// input: the store only updates on success, so the component reverts
+		// localValues to the stored value and shows the error toast.
+		const map: CustomFieldValuesMap = {'3': entry('stored', def({id: 3, type: 'text'}))}
+		const {wrapper, store} = mountFields(1, map)
+		store.saveCustomFieldValue = vi.fn().mockRejectedValue(new Error('400'))
+		const input = wrapper.find('input')
+		await input.setValue('rejected')
+		await input.trigger('blur')
+		await flushPromises()
+		expect(errorMessage).toHaveBeenCalledWith({message: 'task.detail.customFields.saveError'})
+		expect((wrapper.find('input').element as HTMLInputElement).value).toBe('stored')
+	})
+
+	it('shows a toast and reverts a select to the stored option when save fails', async () => {
+		// The select binds option objects, the store holds option value strings —
+		// the revert must re-resolve the stored string back to its option object.
+		const map: CustomFieldValuesMap = {
+			'3': entry('a', def({
+				id: 3,
+				type: 'select',
+				options: [
+					{id: 1, value: 'a', label: 'A', display_order: 0},
+					{id: 2, value: 'b', label: 'B', display_order: 1},
+				],
+			})),
+		}
+		const {wrapper, store} = mountFields(1, map)
+		store.saveCustomFieldValue = vi.fn().mockRejectedValue(new Error('400'))
+		const ms = wrapper.findComponent({name: 'Multiselect'})
+		await ms.vm.$emit('update:modelValue', {id: 2, value: 'b', label: 'B', display_order: 1})
+		await flushPromises()
+		expect(errorMessage).toHaveBeenCalledWith({message: 'task.detail.customFields.saveError'})
+		const reverted = wrapper.findComponent({name: 'Multiselect'}).props('modelValue') as Record<string, unknown>
+		expect(reverted).toEqual({id: 1, value: 'a', label: 'A', display_order: 0})
 	})
 })

@@ -90,6 +90,7 @@
 
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue'
+import {useI18n} from 'vue-i18n'
 import FormInput from '@/components/input/FormInput.vue'
 import Datepicker from '@/components/input/Datepicker.vue'
 import Multiselect from '@/components/input/Multiselect.vue'
@@ -99,6 +100,7 @@ import FancyCheckbox from '@/components/input/FancyCheckbox.vue'
 import AsyncEditor from '@/components/input/AsyncEditor'
 import CustomTransition from '@/components/misc/CustomTransition.vue'
 
+import {error} from '@/message'
 import {useTaskStore} from '@/stores/tasks'
 import type {
 	ICustomFieldValue,
@@ -110,6 +112,8 @@ const props = defineProps<{
 	taskId: number
 	canWrite: boolean
 }>()
+
+const {t} = useI18n({useScope: 'global'})
 
 const taskStore = useTaskStore()
 
@@ -187,18 +191,46 @@ function isEmpty(v: unknown): boolean {
 	return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
 }
 
+// On a failed save/clear (e.g. a 400 from the bulk upsert) the store map is
+// untouched — both actions only write on success — so the stored value is still
+// the pre-edit one. Re-derive the per-type local value from it (option objects
+// for select/multiselect, raw value otherwise) so the input snaps back to what
+// the backend actually holds instead of keeping the rejected value.
+function revertToStored(field: ICustomFieldDefinition) {
+	const stored = taskStore.customFieldValues[props.taskId]?.[String(field.id)]?.value ?? null
+	localValues.value[String(field.id)] = resolveInitialValue({value: stored, field})
+}
+
+async function commitSave(field: ICustomFieldDefinition, value: unknown) {
+	try {
+		await taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value})
+	} catch {
+		error({message: t('task.detail.customFields.saveError')})
+		revertToStored(field)
+	}
+}
+
+async function commitClear(field: ICustomFieldDefinition) {
+	try {
+		await taskStore.clearCustomFieldValue({taskId: props.taskId, fieldId: field.id})
+	} catch {
+		error({message: t('task.detail.customFields.saveError')})
+		revertToStored(field)
+	}
+}
+
 // Save-vs-clear routing: empty -> clear (DELETE); non-empty -> save (upsert).
 function commit(field: ICustomFieldDefinition, value: unknown) {
 	if (isEmpty(value)) {
-		taskStore.clearCustomFieldValue({taskId: props.taskId, fieldId: field.id})
+		commitClear(field)
 	} else {
-		taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value})
+		commitSave(field, value)
 	}
 }
 
 // checkbox false is a real value, not empty — always save.
 function commitCheckbox(field: ICustomFieldDefinition, value: boolean) {
-	taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value})
+	commitSave(field, value)
 }
 
 function toDateOnly(d: Date): string {
@@ -211,21 +243,21 @@ function toDateOnly(d: Date): string {
 // model instead. null/empty -> clear; date -> format to wire format.
 function commitDate(field: ICustomFieldDefinition, value: unknown) {
 	if (value === null || value === undefined || value === '') {
-		taskStore.clearCustomFieldValue({taskId: props.taskId, fieldId: field.id})
+		commitClear(field)
 		return
 	}
 	const date = value instanceof Date ? value : new Date(value as string)
 	const formatted = field.type === 'datetime' ? date.toISOString() : toDateOnly(date)
-	taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value: formatted})
+	commitSave(field, formatted)
 }
 
 function commitSelect(field: ICustomFieldDefinition, value: unknown) {
 	if (value === null || value === undefined) {
-		taskStore.clearCustomFieldValue({taskId: props.taskId, fieldId: field.id})
+		commitClear(field)
 		return
 	}
 	const option = value as ICustomFieldOption
-	taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value: option.value})
+	commitSave(field, option.value)
 }
 
 function commitMultiselect(field: ICustomFieldDefinition, value: unknown) {
@@ -234,9 +266,9 @@ function commitMultiselect(field: ICustomFieldDefinition, value: unknown) {
 	const arr = Array.isArray(value) ? (value as ICustomFieldOption[]) : []
 	const values = arr.map(o => o.value)
 	if (values.length === 0) {
-		taskStore.clearCustomFieldValue({taskId: props.taskId, fieldId: field.id})
+		commitClear(field)
 	} else {
-		taskStore.saveCustomFieldValue({taskId: props.taskId, fieldId: field.id, value: values})
+		commitSave(field, values)
 	}
 }
 </script>
