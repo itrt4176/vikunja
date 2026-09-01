@@ -62,14 +62,21 @@ describe('useTaskStore custom field value actions', () => {
 
 	it('saveCustomFieldValue upserts one field and replaces the whole map from the response', async () => {
 		const store = useTaskStore()
+		// Seed a second field so the keyset differs from the response: only a wholesale
+		// replace drops '4' — a one-field patch would leave it in place.
+		const seeded: CustomFieldValuesMap = {
+			...MAP,
+			'4': {value: null, field: {id: 4, name: 'Blocked', type: 'checkbox', field_config: {}, display_order: 1, project_ids: [5]}},
+		}
 		const replaced: CustomFieldValuesMap = {'3': {...MAP['3'], value: 9}}
 		bulkUpsert.mockResolvedValue(replaced)
-		store.customFieldValues[7] = {...MAP}
+		store.customFieldValues[7] = seeded
 
 		await store.saveCustomFieldValue({taskId: 7, fieldId: 3, value: 9})
 
 		expect(bulkUpsert).toHaveBeenCalledWith(7, [{custom_field_definition_id: 3, value: 9}])
-		expect(store.customFieldValues[7]).toEqual(replaced) // wholesale replace, not one-field patch
+		expect(store.customFieldValues[7]).toEqual(replaced)
+		expect('4' in store.customFieldValues[7]).toBe(false) // wholesale replace, not one-field patch
 	})
 
 	it('clearCustomFieldValue deletes the field and removes the key', async () => {
