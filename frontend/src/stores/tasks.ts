@@ -7,6 +7,7 @@ import TaskAssigneeService from '@/services/taskAssignee'
 import LabelTaskService from '@/services/labelTask'
 import TaskDuplicateService from '@/services/taskDuplicateService'
 import TaskDuplicateModel from '@/models/taskDuplicateModel'
+import CustomFieldService from '@/services/customField'
 
 import {cleanupItemText, parseTaskText, PREFIXES} from '@/modules/quickAddMagic'
 
@@ -23,6 +24,7 @@ import type {ITaskReminder} from '@/modelTypes/ITaskReminder'
 import type {IUser} from '@/modelTypes/IUser'
 import type {IAttachment} from '@/modelTypes/IAttachment'
 import type {IProject} from '@/modelTypes/IProject'
+import type {CustomFieldValuesMap} from '@/modelTypes/ICustomField'
 
 import {REMINDER_PERIOD_RELATIVE_TO_TYPES} from '@/types/IReminderPeriodRelativeTo'
 
@@ -140,6 +142,10 @@ export const useTaskStore = defineStore('task', () => {
 	const isLoading = ref(false)
 	const draggedTask = ref<ITask | null>(null)
 	const lastUpdatedTask = ref<ITask | null>(null)
+	// Custom field values are not on ITask (the native task GET can't be augmented
+	// under yaegi), so the store owns this map instead of syncing a kanban copy.
+	const customFieldValues = ref<Record<ITask['id'], CustomFieldValuesMap>>({})
+	const customFieldsService = new CustomFieldService()
 
 	const hasTasks = computed(() => Object.keys(tasks.value).length > 0)
 
@@ -371,7 +377,40 @@ export const useTaskStore = defineStore('task', () => {
 
 		return response
 	}
-	
+
+	async function loadCustomFields(taskId: ITask['id']): Promise<CustomFieldValuesMap> {
+		const cancel = setModuleLoading(setIsLoading)
+		try {
+			const map = await customFieldsService.getValues(taskId)
+			customFieldValues.value[taskId] = map
+			return map
+		} finally {
+			cancel()
+		}
+	}
+
+	async function saveCustomFieldValue({taskId, fieldId, value}: {taskId: ITask['id'], fieldId: number, value: unknown}): Promise<CustomFieldValuesMap> {
+		const cancel = setModuleLoading(setIsLoading)
+		try {
+			// The bulk POST returns the whole map (readValuesForTask); replace wholesale,
+			// not a one-field patch.
+			const map = await customFieldsService.bulkUpsert(taskId, [{custom_field_definition_id: fieldId, value}])
+			customFieldValues.value[taskId] = map
+			return map
+		} finally {
+			cancel()
+		}
+	}
+
+	async function clearCustomFieldValue({taskId, fieldId}: {taskId: ITask['id'], fieldId: number}): Promise<void> {
+		// maxPermission: null satisfies the AbstractService delete generic (the plugin's
+		// delete model isn't exported); getReplacedRoute only reads the route params.
+		await customFieldsService.delete({taskId, fieldId, maxPermission: null})
+		if (customFieldValues.value[taskId]) {
+			delete customFieldValues.value[taskId][String(fieldId)]
+		}
+	}
+
 	async function ensureLabelsExist(labels: string[]): Promise<LabelModel[]> {
 		const all = [...new Set(labels)]
 		const findLabel = (labelTitle: string) => validateLabel(Object.values(labelStore.labels) as ILabel[], labelTitle)
@@ -668,6 +707,11 @@ export const useTaskStore = defineStore('task', () => {
 		toggleFavorite,
 		duplicateTask,
 		markTaskAsRead,
+
+		customFieldValues,
+		loadCustomFields,
+		saveCustomFieldValue,
+		clearCustomFieldValue,
 	}
 })
 
