@@ -25,6 +25,7 @@
 				<DatepickerInline
 					v-model="date"
 					:show-shortcuts="showShortcuts"
+					:with-time="withTime"
 					@update:modelValue="updateData"
 				/>
 
@@ -60,6 +61,7 @@ const props = withDefaults(defineProps<{
 	showShortcuts?: boolean,
 	// When the value is null, show this (italic) instead of chooseDateLabel.
 	emptyLabel?: string,
+	withTime?: boolean,
 }>(), {
 	chooseDateLabel: () => {
 		const {t} = useI18n({useScope: 'global'})
@@ -68,6 +70,7 @@ const props = withDefaults(defineProps<{
 	disabled: false,
 	showShortcuts: true,
 	emptyLabel: '',
+	withTime: true,
 })
 
 const emit = defineEmits<{

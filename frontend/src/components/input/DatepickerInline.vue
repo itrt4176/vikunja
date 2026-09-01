@@ -93,8 +93,10 @@ import {TIME_FORMAT} from '@/constants/timeFormat'
 const props = withDefaults(defineProps<{
 	modelValue: Date | null | string
 	showShortcuts?: boolean
+	withTime?: boolean
 }>(), {
 	showShortcuts: true,
+	withTime: true,
 })
 
 const emit = defineEmits<{
@@ -121,12 +123,12 @@ const flatPickerConfig = computed(() => {
 	return {
 		altFormat: t('date.altFormatLong'),
 		altInput: true,
-		dateFormat: 'Y-m-d H:i',
-		...(configuredDueTime === null ? {} : {
+		dateFormat: props.withTime ? 'Y-m-d H:i' : 'Y-m-d',
+		...(props.withTime && configuredDueTime !== null ? {
 			defaultHour: configuredDueTime.hours,
 			defaultMinute: configuredDueTime.minutes,
-		}),
-		enableTime: true,
+		} : {}),
+		enableTime: props.withTime,
 		time_24hr: timeFormat.value === TIME_FORMAT.HOURS_24,
 		inline: true,
 		locale: useFlatpickrLanguage().value,
@@ -137,9 +139,12 @@ function formatDateToFlatpickrString(date: Date): string {
 	const year = date.getFullYear()
 	const month = (date.getMonth() + 1).toString().padStart(2, '0')
 	const day = date.getDate().toString().padStart(2, '0')
+	if (!props.withTime) {
+		return `${year}-${month}-${day}`
+	}
 	const hours = date.getHours().toString().padStart(2, '0')
 	const minutes = date.getMinutes().toString().padStart(2, '0')
-	
+
 	return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
@@ -221,7 +226,7 @@ function setDate(dateString: string) {
 	const interval = calculateDayInterval(dateString)
 	const newDate = new Date()
 	newDate.setDate(newDate.getDate() + interval)
-	date.value = getDateWithTime(newDate)
+	date.value = props.withTime ? getDateWithTime(newDate) : newDate
 	updateData()
 }
 
