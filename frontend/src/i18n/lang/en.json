@@ -1072,6 +1072,7 @@
       "color": "Color",
       "created": "Created",
       "createdBy": "Created By",
+      "customFields": "Custom Fields",
       "description": "Description",
       "done": "Done",
       "dueDate": "Due Date",

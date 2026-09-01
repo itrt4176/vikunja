@@ -315,6 +315,23 @@
 								/>
 							</div>
 						</CustomTransition>
+						<CustomTransition
+							name="flash-background"
+							appear
+						>
+							<div
+								v-if="activeFields.customFields"
+								class="column custom-fields"
+							>
+								<div class="detail-title">
+									{{ $t('task.attributes.customFields') }}
+								</div>
+								<CustomFields
+									:task-id="task.id"
+									:can-write="canWrite"
+								/>
+							</div>
+						</CustomTransition>
 					</div>
 
 					<!-- Labels -->
@@ -679,6 +696,7 @@ import ChecklistSummary from '@/components/tasks/partials/ChecklistSummary.vue'
 import ColorPicker from '@/components/input/ColorPicker.vue'
 import Comments from '@/components/tasks/partials/Comments.vue'
 import CreatedUpdated from '@/components/tasks/partials/CreatedUpdated.vue'
+import CustomFields from '@/components/tasks/partials/CustomFields.vue'
 import Datepicker from '@/components/input/Datepicker.vue'
 import Description from '@/components/tasks/partials/Description.vue'
 import EditAssignees from '@/components/tasks/partials/EditAssignees.vue'
@@ -955,6 +973,18 @@ watch(
 			taskColor.value = task.value.hexColor
 			setActiveFields()
 
+			// Custom fields are a separate resource (S3 AC#1: the native task GET
+			// can't carry them). Load alongside, then re-run setActiveFields so the
+			// section shows iff the project has assigned fields. Failures are
+			// swallowed: the catch below routes 404/403 to not-found, but a missing
+			// plugin endpoint 404s here while the task itself is fine.
+			try {
+				await taskStore.loadCustomFields(task.value.id)
+			} catch (e) {
+				console.debug('Could not load custom fields for task', task.value.id, e)
+			}
+			setActiveFields()
+
 			if (task.value.isUnread) {
 				await taskStore.markTaskAsRead(task.value.id)
 				task.value.isUnread = false
@@ -986,6 +1016,7 @@ type FieldType =
 	| 'assignees'
 	| 'attachments'
 	| 'color'
+	| 'customFields'
 	| 'dueDate'
 	| 'endDate'
 	| 'labels'
@@ -1002,6 +1033,7 @@ const activeFields: { [type in FieldType]: boolean } = reactive({
 	assignees: false,
 	attachments: false,
 	color: false,
+	customFields: false,
 	dueDate: false,
 	endDate: false,
 	labels: false,
@@ -1033,12 +1065,15 @@ function setActiveFields() {
 	activeFields.reminders = task.value.reminders.length > 0
 	activeFields.repeatAfter = task.value.repeatAfter?.amount > 0 || task.value.repeatMode !== TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
 	activeFields.startDate = task.value.startDate !== null
+	activeFields.customFields = Object.keys(taskStore.customFieldValues[task.value.id] ?? {}).length > 0
 }
 
 const activeFieldElements: { [id in FieldType]: HTMLElement | null } = reactive({
 	assignees: null,
 	attachments: null,
 	color: null,
+	// No field ref: the section auto-shows; there's no action button to focus it from.
+	customFields: null,
 	dueDate: null,
 	endDate: null,
 	labels: null,
