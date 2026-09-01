@@ -31,13 +31,18 @@
 				@update:modelValue="(v) => (localValues[String(entry.field.id)] = v)"
 				@blur="commit(entry.field, localValues[String(entry.field.id)])"
 			/>
-			<!-- textarea (TipTap; stores HTML) -->
+			<!-- textarea (TipTap; stores HTML) — commit on @save (the Save button),
+			not @blur: TipTap doesn't emit blur and blur doesn't bubble from the
+			contenteditable to its root <div>, so @blur never fires in a real browser.
+			@save fires on the Save button click (bubbleSave), the "done editing"
+			signal analogous to FormInput's @blur. @update:modelValue keeps the local
+			ref current so localValues[id] holds the latest HTML at save time. -->
 			<AsyncEditor
 				v-else-if="entry.field.type === 'textarea'"
 				:model-value="textareaModelValue(entry)"
 				:is-edit-enabled="canWrite && !entry.field.field_config.is_api_only"
 				@update:modelValue="(v) => (localValues[String(entry.field.id)] = v)"
-				@blur="commit(entry.field, localValues[String(entry.field.id)])"
+				@save="commit(entry.field, localValues[String(entry.field.id)])"
 			/>
 			<!-- date / datetime -->
 			<Datepicker

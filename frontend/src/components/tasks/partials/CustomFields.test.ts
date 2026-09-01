@@ -1,6 +1,7 @@
 import {describe, it, expect, vi} from 'vitest'
 import {mount} from '@vue/test-utils'
 import {setActivePinia, createPinia} from 'pinia'
+import {defineComponent} from 'vue'
 
 vi.mock('@/router', () => ({default: {currentRoute: {value: {params: {}}}, isReady: () => Promise.resolve()}}))
 vi.mock('vue-i18n', () => ({useI18n: () => ({t: (k: string) => k}), createI18n: () => ({global: {t: (k: string) => k}})}))
@@ -12,6 +13,24 @@ vi.mock('@/services/customField', () => ({
 		delete = vi.fn()
 	},
 }))
+
+// AsyncEditor is a dynamic import (TipTap). Mock the module with a stub that
+// emits `save` on a button click so the textarea commit-on-@save wiring is
+// exercisable — TipTap emits `save` on its Save button (bubbleSave), not on blur
+// (blur doesn't bubble from the contenteditable to the root <div>). vi.mock is
+// hoisted above the import, so the stub is built in vi.hoisted (defineComponent
+// is only available at runtime, not hoist time).
+const {AsyncEditorStub} = vi.hoisted(() => {
+	const {defineComponent} = require('vue')
+	return {
+		AsyncEditorStub: defineComponent({
+			name: 'AsyncEditor',
+			emits: ['save', 'update:modelValue'],
+			template: '<div class="async-editor-stub"><button class="stub-save" @click="$emit(\'save\')">save</button></div>',
+		}),
+	}
+})
+vi.mock('@/components/input/AsyncEditor', () => ({default: AsyncEditorStub}))
 
 import CustomFields from './CustomFields.vue'
 import {useTaskStore} from '@/stores/tasks'
@@ -34,9 +53,8 @@ function mountFields(taskId: number, map: CustomFieldValuesMap, canWrite = true)
 	const wrapper = mount(CustomFields, {
 		props: {taskId, canWrite},
 		// CustomTransition is a real <transition>; stubbing it would discard the
-		// v-for slot (and the .detail-title inside). AsyncEditor is a dynamic
-		// import — stub it to avoid loading TipTap in the unit test.
-		global: {mocks: {$t: (k: string) => k}, stubs: {AsyncEditor: true}},
+		// v-for slot (and the .detail-title inside).
+		global: {mocks: {$t: (k: string) => k}},
 	})
 	return {wrapper, store}
 }
@@ -101,5 +119,15 @@ describe('CustomFields.vue', () => {
 		await input.setValue('hello')
 		await input.trigger('blur')
 		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'hello'})
+	})
+
+	it('textarea commits on @save (AsyncEditor emits save, not blur)', async () => {
+		// TipTap emits `save` on its Save button (bubbleSave), not on blur — blur
+		// doesn't bubble from the contenteditable to the root <div>, so @blur never
+		// fires in a real browser. The commit must wire @save, not @blur.
+		const map: CustomFieldValuesMap = {'3': entry('hi', def({id: 3, type: 'textarea'}))}
+		const {wrapper, store} = mountFields(1, map)
+		await wrapper.find('.stub-save').trigger('click')
+		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'hi'})
 	})
 })
