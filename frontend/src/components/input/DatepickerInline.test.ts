@@ -40,6 +40,7 @@ describe('DatepickerInline withTime', () => {
 		const config = JSON.parse(wrapper.find('.fp-stub').text())
 		expect(config.enableTime).toBe(true)
 		expect(config.dateFormat).toBe('Y-m-d H:i')
+		expect(config.altFormat).toBe('j M Y, H:i')
 	})
 
 	it('disables time and uses date-only format when withTime is false', () => {
@@ -47,5 +48,6 @@ describe('DatepickerInline withTime', () => {
 		const config = JSON.parse(wrapper.find('.fp-stub').text())
 		expect(config.enableTime).toBe(false)
 		expect(config.dateFormat).toBe('Y-m-d')
+		expect(config.altFormat).toBe('j M Y')
 	})
 })

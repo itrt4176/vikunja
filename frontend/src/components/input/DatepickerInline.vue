@@ -121,7 +121,7 @@ const flatPickerConfig = computed(() => {
 	const configuredDueTime = parseUserDefaultTime(useAuthStore().settings.frontendSettings.defaultDueTime)
 
 	return {
-		altFormat: t('date.altFormatLong'),
+		altFormat: props.withTime ? t('date.altFormatLong') : t('date.altFormatShort'),
 		altInput: true,
 		dateFormat: props.withTime ? 'Y-m-d H:i' : 'Y-m-d',
 		...(props.withTime && configuredDueTime !== null ? {
