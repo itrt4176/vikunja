@@ -61,6 +61,7 @@
 				:model-value="selectModelValue(entry)"
 				:multiple="false"
 				:creatable="false"
+				:show-empty="true"
 				:search-results="optionSearchResults(entry.field.options)"
 				label="label"
 				:disabled="!canWrite || entry.field.field_config.is_api_only"
@@ -72,6 +73,7 @@
 				:model-value="multiselectModelValue(entry)"
 				:multiple="true"
 				:creatable="false"
+				:show-empty="true"
 				:search-results="optionSearchResults(entry.field.options)"
 				label="label"
 				:disabled="!canWrite || entry.field.field_config.is_api_only"
@@ -191,14 +193,32 @@ function isEmpty(v: unknown): boolean {
 	return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
 }
 
+// The value the backend already holds for this field (wire format: scalar,
+// string[] for multiselect, or null). Used both to revert on a failed save and
+// to skip a commit when the new value matches it.
+function storedValue(field: ICustomFieldDefinition): unknown {
+	const v = taskStore.customFieldValues[props.taskId]?.[String(field.id)]?.value ?? null
+	return Array.isArray(v) && v.length === 0 ? null : v
+}
+
+// Order-independent comparison for multiselect's string[]; scalars compare with ===.
+function valueEquals(a: unknown, b: unknown): boolean {
+	if (Array.isArray(a) && Array.isArray(b)) {
+		if (a.length !== b.length) return false
+		const sa = [...(a as string[])].sort()
+		const sb = [...(b as string[])].sort()
+		return sa.every((v, i) => v === sb[i])
+	}
+	return a === b
+}
+
 // On a failed save/clear (e.g. a 400 from the bulk upsert) the store map is
 // untouched — both actions only write on success — so the stored value is still
 // the pre-edit one. Re-derive the per-type local value from it (option objects
 // for select/multiselect, raw value otherwise) so the input snaps back to what
 // the backend actually holds instead of keeping the rejected value.
 function revertToStored(field: ICustomFieldDefinition) {
-	const stored = taskStore.customFieldValues[props.taskId]?.[String(field.id)]?.value ?? null
-	localValues.value[String(field.id)] = resolveInitialValue({value: stored, field})
+	localValues.value[String(field.id)] = resolveInitialValue({value: storedValue(field), field})
 }
 
 async function commitSave(field: ICustomFieldDefinition, value: unknown) {
@@ -219,17 +239,22 @@ async function commitClear(field: ICustomFieldDefinition) {
 	}
 }
 
-// Save-vs-clear routing: empty -> clear (DELETE); non-empty -> save (upsert).
+// Save-vs-clear routing with a no-op guard: if the new wire value equals the
+// stored value, fire nothing (no spurious DELETE/upsert on an unchanged blur).
+// Empty -> clear (DELETE); non-empty -> save (upsert).
 function commit(field: ICustomFieldDefinition, value: unknown) {
-	if (isEmpty(value)) {
+	const wire = isEmpty(value) ? null : value
+	if (valueEquals(wire, storedValue(field))) return
+	if (wire === null) {
 		commitClear(field)
 	} else {
-		commitSave(field, value)
+		commitSave(field, wire)
 	}
 }
 
-// checkbox false is a real value, not empty — always save.
+// checkbox false is a real value, not empty — save unless it matches the stored value.
 function commitCheckbox(field: ICustomFieldDefinition, value: boolean) {
+	if (valueEquals(value, storedValue(field))) return
 	commitSave(field, value)
 }
 
@@ -240,35 +265,41 @@ function toDateOnly(d: Date): string {
 }
 
 // Datepicker emits closeOnChange with a boolean (not the date); read the bound
-// model instead. null/empty -> clear; date -> format to wire format.
+// model instead. null/empty -> clear; date -> format to wire format. No-op if
+// the formatted value matches the stored wire value.
 function commitDate(field: ICustomFieldDefinition, value: unknown) {
 	if (value === null || value === undefined || value === '') {
+		if (storedValue(field) === null) return
 		commitClear(field)
 		return
 	}
 	const date = value instanceof Date ? value : new Date(value as string)
 	const formatted = field.type === 'datetime' ? date.toISOString() : toDateOnly(date)
+	if (valueEquals(formatted, storedValue(field))) return
 	commitSave(field, formatted)
 }
 
 function commitSelect(field: ICustomFieldDefinition, value: unknown) {
-	if (value === null || value === undefined) {
+	const wire = value === null || value === undefined ? null : (value as ICustomFieldOption).value
+	if (valueEquals(wire, storedValue(field))) return
+	if (wire === null) {
 		commitClear(field)
-		return
+	} else {
+		commitSave(field, wire)
 	}
-	const option = value as ICustomFieldOption
-	commitSave(field, option.value)
 }
 
 function commitMultiselect(field: ICustomFieldDefinition, value: unknown) {
 	// Derive the value array from the bound model (the option objects); the last
-	// option removed -> empty array -> clear.
+	// option removed -> empty array -> clear. No-op if it matches the stored array.
 	const arr = Array.isArray(value) ? (value as ICustomFieldOption[]) : []
 	const values = arr.map(o => o.value)
-	if (values.length === 0) {
+	const wire = values.length > 0 ? values : null
+	if (valueEquals(wire, storedValue(field))) return
+	if (wire === null) {
 		commitClear(field)
 	} else {
-		commitSave(field, values)
+		commitSave(field, wire)
 	}
 }
 </script>

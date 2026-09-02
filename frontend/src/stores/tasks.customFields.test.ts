@@ -79,14 +79,20 @@ describe('useTaskStore custom field value actions', () => {
 		expect('4' in store.customFieldValues[7]).toBe(false) // wholesale replace, not one-field patch
 	})
 
-	it('clearCustomFieldValue deletes the field and removes the key', async () => {
+	it('clearCustomFieldValue sets the entry value to null, keeping the row (the field is still assigned)', async () => {
+		// A cleared field is still *assigned* to the project — the row must stay,
+		// rendered with an empty input (value: null), not vanish from the section.
+		// Deleting the map key made the v-for drop the row; the next save's
+		// wholesale-replace then "reappeared" it (readValuesForTask emits null for
+		// the deleted row). Set the value to null instead so the row is stable.
 		const store = useTaskStore()
 		deleteValue.mockResolvedValue({})
 		store.customFieldValues[7] = {...MAP}
 
 		await store.clearCustomFieldValue({taskId: 7, fieldId: 3})
 
-		expect(deleteValue).toHaveBeenCalled()
-		expect('3' in store.customFieldValues[7]).toBe(false)
+		expect(deleteValue).toHaveBeenCalledWith({taskId: 7, fieldId: 3, maxPermission: null})
+		expect('3' in store.customFieldValues[7]).toBe(true) // the row stays
+		expect(store.customFieldValues[7]['3'].value).toBe(null) // empty, not gone
 	})
 })

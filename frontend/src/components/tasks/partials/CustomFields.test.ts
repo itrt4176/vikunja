@@ -116,6 +116,50 @@ describe('CustomFields.vue', () => {
 		expect(store.saveCustomFieldValue).not.toHaveBeenCalled()
 	})
 
+	it('select Multiselect passes :show-empty so the dropdown opens on focus (not a text box)', () => {
+		// Without :show-empty, Multiselect.searchResultsVisible is false while the
+		// query is empty, so clicking the select focuses the search input but never
+		// opens the dropdown — it looks like a plain text box until you type.
+		const map: CustomFieldValuesMap = {
+			'3': entry(null, def({id: 3, type: 'select', options: [{id: 1, value: 'a', label: 'A', display_order: 0}]})),
+		}
+		const {wrapper} = mountFields(1, map)
+		const ms = wrapper.findComponent({name: 'Multiselect'})
+		expect(ms.props('showEmpty')).toBe(true)
+	})
+
+	it('multiselect Multiselect passes :show-empty', () => {
+		const map: CustomFieldValuesMap = {
+			'3': entry(null, def({id: 3, type: 'multiselect', options: [{id: 1, value: 'a', label: 'A', display_order: 0}]})),
+		}
+		const {wrapper} = mountFields(1, map)
+		expect(wrapper.findComponent({name: 'Multiselect'}).props('showEmpty')).toBe(true)
+	})
+
+	it('blur an unchanged empty field fires no commit (no spurious clear that erases the row)', async () => {
+		// An assigned-but-unset field has value: null. Focusing it and blurring
+		// without typing must NOT fire clearCustomFieldValue — the value didn't
+		// change. The old code routed on isEmpty(new) alone, so blurring an
+		// already-empty field fired a DELETE that erased the row.
+		const map: CustomFieldValuesMap = {'3': entry(null, def({id: 3, type: 'text'}))}
+		const {wrapper, store} = mountFields(1, map)
+		const input = wrapper.find('input')
+		await input.trigger('focus')
+		await input.trigger('blur')
+		expect(store.clearCustomFieldValue).not.toHaveBeenCalled()
+		expect(store.saveCustomFieldValue).not.toHaveBeenCalled()
+	})
+
+	it('blur an unchanged non-empty field fires no commit (no spurious save)', async () => {
+		const map: CustomFieldValuesMap = {'3': entry('same', def({id: 3, type: 'text'}))}
+		const {wrapper, store} = mountFields(1, map)
+		const input = wrapper.find('input')
+		await input.trigger('focus')
+		await input.trigger('blur')
+		expect(store.saveCustomFieldValue).not.toHaveBeenCalled()
+		expect(store.clearCustomFieldValue).not.toHaveBeenCalled()
+	})
+
 	it('save-vs-clear: non-empty routes to saveCustomFieldValue', async () => {
 		const map: CustomFieldValuesMap = {'3': entry('', def({id: 3, type: 'text'}))}
 		const {wrapper, store} = mountFields(1, map)
@@ -128,11 +172,15 @@ describe('CustomFields.vue', () => {
 	it('textarea commits on @save (AsyncEditor emits save, not blur)', async () => {
 		// TipTap emits `save` on its Save button (bubbleSave), not on blur — blur
 		// doesn't bubble from the contenteditable to the root <div>, so @blur never
-		// fires in a real browser. The commit must wire @save, not @blur.
+		// fires in a real browser. The commit must wire @save, not @blur. The value
+		// must actually change (the no-op guard skips a commit that matches the
+		// stored value), so emit an update:modelValue before Save.
 		const map: CustomFieldValuesMap = {'3': entry('hi', def({id: 3, type: 'textarea'}))}
 		const {wrapper, store} = mountFields(1, map)
+		const editor = wrapper.findComponent({name: 'AsyncEditor'})
+		await editor.vm.$emit('update:modelValue', 'changed')
 		await wrapper.find('.stub-save').trigger('click')
-		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'hi'})
+		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'changed'})
 	})
 
 	it('shows a toast and reverts the input to the stored value when save fails', async () => {

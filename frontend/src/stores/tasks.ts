@@ -406,8 +406,13 @@ export const useTaskStore = defineStore('task', () => {
 		// maxPermission: null satisfies the AbstractService delete generic (the plugin's
 		// delete model isn't exported); getReplacedRoute only reads the route params.
 		await customFieldsService.delete({taskId, fieldId, maxPermission: null})
-		if (customFieldValues.value[taskId]) {
-			delete customFieldValues.value[taskId][String(fieldId)]
+		// A cleared field is still *assigned* to the project, so the row must stay
+		// (rendered with an empty input, value: null) — deleting the map key would
+		// drop it from the section until the next save's wholesale-replace brought
+		// it back. Mirror what readValuesForTask returns for a deleted row.
+		const entry = customFieldValues.value[taskId]?.[String(fieldId)]
+		if (entry) {
+			entry.value = null
 		}
 	}
 
