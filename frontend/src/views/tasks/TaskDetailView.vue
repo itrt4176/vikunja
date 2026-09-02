@@ -327,6 +327,7 @@
 									{{ $t('task.attributes.customFields') }}
 								</div>
 								<CustomFields
+									:key="task.id"
 									:task-id="task.id"
 									:can-write="canWrite"
 								/>

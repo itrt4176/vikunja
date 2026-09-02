@@ -169,6 +169,31 @@ describe('CustomFields.vue', () => {
 		expect(store.saveCustomFieldValue).toHaveBeenCalledWith({taskId: 1, fieldId: 3, value: 'hello'})
 	})
 
+	it('changing taskId re-seeds localValues from the new task (no staleness leak between tasks)', async () => {
+		// TaskDetailView mounts <CustomFields :key="task.id" :task-id="task.id"> so
+		// navigating task A → task B in the same project (same field ids) remounts
+		// the component. Without the remount, localValues (seeded only for absent
+		// keys) would retain task A's value, render it for task B, and a blur would
+		// commit task A's value onto task B. Simulate the remount by setting a
+		// different task's map and re-mounting (the :key makes the parent do this).
+		const mapA: CustomFieldValuesMap = {'3': entry('task-a-value', def({id: 3, type: 'text'}))}
+		const {store} = mountFields(1, mapA)
+		// Now open task B (same field id 3, different value) in the same project.
+		const mapB: CustomFieldValuesMap = {'3': entry('task-b-value', def({id: 3, type: 'text'}))}
+		store.customFieldValues[2] = mapB
+		const wrapperB = mount(CustomFields, {
+			props: {taskId: 2, canWrite: true},
+			global: {mocks: {$t: (k: string) => k}},
+		})
+		await flushPromises()
+		const inputB = wrapperB.find('input')
+		expect((inputB.element as HTMLInputElement).value).toBe('task-b-value') // not 'task-a-value'
+		// Blurring unchanged fires no commit onto task B.
+		await inputB.trigger('blur')
+		expect(store.saveCustomFieldValue).not.toHaveBeenCalledWith(expect.objectContaining({taskId: 2}))
+		expect(store.clearCustomFieldValue).not.toHaveBeenCalledWith(expect.objectContaining({taskId: 2}))
+	})
+
 	it('textarea commits on @save (AsyncEditor emits save, not blur)', async () => {
 		// TipTap emits `save` on its Save button (bubbleSave), not on blur — blur
 		// doesn't bubble from the contenteditable to the root <div>, so @blur never

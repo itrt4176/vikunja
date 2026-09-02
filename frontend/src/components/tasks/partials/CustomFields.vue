@@ -253,7 +253,12 @@ function commit(field: ICustomFieldDefinition, value: unknown) {
 }
 
 // checkbox false is a real value, not empty — save unless it matches the stored value.
+// Write localValues so the bound :model-value reflects the toggle (FancyCheckbox's
+// native input flips the DOM on click, but the prop only re-patches on a real
+// change; writing the local ref keeps the source of truth and the revert-on-error
+// path consistent with the other types).
 function commitCheckbox(field: ICustomFieldDefinition, value: boolean) {
+	localValues.value[String(field.id)] = value
 	if (valueEquals(value, storedValue(field))) return
 	commitSave(field, value)
 }
